@@ -2,135 +2,89 @@
 <html>
 <head>
     <title>ESP32 LED Control</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            font-family: Arial, sans-serif;
-            background-color: #f0f0f0;
-        }
-        h1 {
-            color: #333;
-            margin: 20px 0;
-        }
-        button {
-            padding: 15px 30px;
-            margin: 10px;
-            font-size: 18px;
-            cursor: pointer;
-            border: none;
-            border-radius: 5px;
-            transition: opacity 0.3s;
-        }
+        /* ... (keep previous styles) ... */
         .slider-container {
             margin: 20px;
-            width: 300px;
-            text-align: center;
+            width: 80%;
+            max-width: 300px;
         }
-        .slider {
-            -webkit-appearance: none;
-            width: 100%;
-            height: 15px;
-            border-radius: 10px;
-            background: #ddd;
-            outline: none;
-        }
-        .slider::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            width: 25px;
-            height: 25px;
-            border-radius: 50%;
-            background: #008CBA;
-            cursor: pointer;
-        }
-        .brightness-value {
-            font-size: 24px;
-            margin: 10px;
-            color: #333;
-        }
-        button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-        #connectBtn {
-            background-color: #4CAF50;
-            color: white;
-        }
-        #onBtn {
-            background-color: #008CBA;
-            color: white;
-        }
-        #offBtn {
-            background-color: #f44336;
-            color: white;
-        }
-        .status {
-            margin: 20px;
+        /* Add mobile-friendly touch targets */
+        button {
+            padding: 20px 40px;
             font-size: 20px;
-            color: #666;
         }
     </style>
 </head>
 <body>
-    <h1>ESP32 LED Control</h1>
-    <button id="connectBtn">Connect to BLE</button>
-    <div class="status" id="status">Status: Not Connected</div>
-    
-    <div class="slider-container">
-        <div class="brightness-value" id="brightnessValue">0%</div>
-        <input type="range" min="0" max="100" value="0" class="slider" id="brightnessSlider" disabled>
-    </div>
-    
-    <div>
-        <button id="onBtn" disabled>Turn On</button>
-        <button id="offBtn" disabled>Turn Off</button>
-    </div>
+    <!-- ... (keep previous HTML structure) ... -->
 
     <script>
+        let device;
         let ledCharacteristic;
         const serviceUuid = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
         const characteristicUuid = 'beb5483e-36e1-4688-b7f5-ea07361b26a8';
 
         async function connectBLE() {
             try {
-                const device = await navigator.bluetooth.requestDevice({
-                    filters: [{ name: 'ESP32 LED Control' }],
+                device = await navigator.bluetooth.requestDevice({
+                    filters: [{ services: [serviceUuid] }],
                     optionalServices: [serviceUuid]
                 });
+                
+                device.addEventListener('gattserverdisconnected', onDisconnect);
                 
                 const server = await device.gatt.connect();
                 const service = await server.getPrimaryService(serviceUuid);
                 ledCharacteristic = await service.getCharacteristic(characteristicUuid);
                 
-                document.getElementById('status').textContent = 'Status: Connected';
-                document.getElementById('onBtn').disabled = false;
-                document.getElementById('offBtn').disabled = false;
-                document.getElementById('brightnessSlider').disabled = false;
+                updateUI(true);
             } catch (error) {
-                document.getElementById('status').textContent = 'Status: Connection Failed';
+                updateUI(false);
                 console.error('Connection error:', error);
             }
         }
 
-        async function sendCommand(value) {
-            const data = new TextEncoder().encode(value.toString());
-            try {
-                await ledCharacteristic.writeValue(data);
-            } catch (error) {
-                document.getElementById('status').textContent = 'Status: Send Failed';
-                console.error('Send error:', error);
+        function onDisconnect() {
+            updateUI(false);
+            console.log('Device disconnected');
+        }
+
+        function updateUI(connected) {
+            const status = document.getElementById('status');
+            const elements = document.querySelectorAll('button:not(#connectBtn), #brightnessSlider');
+            
+            if (connected) {
+                status.textContent = 'Status: Connected';
+                status.style.color = '#4CAF50';
+                elements.forEach(el => el.disabled = false);
+            } else {
+                status.textContent = 'Status: Disconnected';
+                status.style.color = '#f44336';
+                elements.forEach(el => el.disabled = true);
             }
         }
 
-        // Slider event handler
+        async function sendCommand(value) {
+            if (!ledCharacteristic) return;
+            
+            try {
+                const data = new TextEncoder().encode(value.toString());
+                await ledCharacteristic.writeValue(data);
+            } catch (error) {
+                console.error('Send error:', error);
+                updateUI(false);
+            }
+        }
+
+        // Initialize event listeners
         document.getElementById('brightnessSlider').addEventListener('input', (e) => {
             const value = e.target.value;
             document.getElementById('brightnessValue').textContent = `${value}%`;
             sendCommand(value);
         });
 
-        // Button handlers
         document.getElementById('connectBtn').addEventListener('click', connectBLE);
         document.getElementById('onBtn').addEventListener('click', () => {
             document.getElementById('brightnessSlider').value = 100;
